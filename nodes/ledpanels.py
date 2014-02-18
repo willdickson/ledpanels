@@ -5,8 +5,10 @@ import rospy
 import serial
 import numpy as N
 
-from ledpanels.msg import MsgPanelsCommand
-from ledpanels.srv import *
+if __name__ == '__main__':
+    from ledpanels.msg import MsgPanelsCommand
+    from ledpanels.srv import *
+    
 import subprocess
 
 
@@ -28,8 +30,10 @@ class LEDPanels():
         
         rospy.init_node('ledpanels')
         rospy.sleep(1)
-        
-        self.subPanelsCommand = rospy.Subscriber('ledpanels/command', MsgPanelsCommand, self.PanelsCommand_callback)
+
+        if __name__=='__main__':        
+            self.subPanelsCommand = rospy.Subscriber('ledpanels/command', MsgPanelsCommand, self.PanelsCommand_callback)
+            
         rospy.on_shutdown(self.OnShutdown_callback)
         
         self.commands = {
@@ -224,14 +228,20 @@ class LEDPanels():
 
 
         # A few commands need to run as services, since they return data back to the caller.
-        self.services = {}
-        self.services['get_version'] = self.srvGetVersion = rospy.Service('get_version', SrvGetVersion, self.GetVersion_callback)        
-        self.services['get_adc_value'] = rospy.Service('get_adc_value', SrvGetADCValue, self.GetADCValue_callback)        
+        if __name__=='__main__':        
+            self.services = {}
+            self.services['readline'] = self.srvGetVersion = rospy.Service('readline', SrvReadline, self.Readline_callback)        
+            self.services['get_version'] = self.srvGetVersion = rospy.Service('get_version', SrvGetVersion, self.GetVersion_callback)        
+            self.services['get_adc_value'] = rospy.Service('get_adc_value', SrvGetADCValue, self.GetADCValue_callback)        
 
         self.serialport = self.DiscoverSerialPort() 
         rospy.logwarn ('ledpanels using %s' % self.serialport)
         if (self.serialport is not None):
-            self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+            #self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+            #self.serial = serial.Serial(self.serialport, baudrate=460800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+            #self.serial = serial.Serial(self.serialport, baudrate=230400, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+            self.serial = serial.Serial(self.serialport, baudrate=115200, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+            #self.serial = serial.Serial(self.serialport, baudrate=76800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
             self.initialized = True
         else:
             rospy.logerr('ledpanels serial port was not specified as a ROS parameter, nor was it found automatically.')
@@ -270,6 +280,17 @@ class LEDPanels():
                 rospy.logwarn ('ledpanels: Opened serial port %s' % self.serialport)
     
         
+    # Read a string from panels controller.
+    def Readline_callback (self, req):
+        data = None
+        if self.initialized:
+            self.MakeSurePortIsOpen()
+            data = self.serial.readline()
+            
+        return SrvReadlineResponse(data=data)
+            
+            
+
     # Sends the get_version command to the LED controller, and returns the response.
     def GetVersion_callback (self, req):
         version = None
@@ -412,6 +433,8 @@ class LEDPanels():
         panelcommand = MsgPanelsCommand(command='all_off')
         self.PanelsCommand_callback(panelcommand)
         rospy.spin()
+#         while (1):
+#             rospy.logwarn(self.serial.readline())
 
 #        # Shutdown all the services we offered.
 #        for key in self.services:
