@@ -245,6 +245,7 @@ class LEDPanels():
             self.initialized = True
         else:
             rospy.logerr('ledpanels serial port was not specified as a ROS parameter, nor was it found automatically.')
+            rospy.signal_shutdown('Exiting ledpanels due to cannot find controller serial port.')
             
 
     # Figure out which serial port the panels controller is attached to.
