@@ -237,15 +237,17 @@ class LEDPanels():
         self.serialport = self.DiscoverSerialPort() 
         rospy.logwarn ('ledpanels using %s' % self.serialport)
         if (self.serialport is not None):
-            #self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-            #self.serial = serial.Serial(self.serialport, baudrate=460800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-            #self.serial = serial.Serial(self.serialport, baudrate=230400, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-            self.serial = serial.Serial(self.serialport, baudrate=115200, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-            #self.serial = serial.Serial(self.serialport, baudrate=76800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-            self.initialized = True
+            try:
+                #self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                #self.serial = serial.Serial(self.serialport, baudrate=460800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                #self.serial = serial.Serial(self.serialport, baudrate=230400, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                self.serial = serial.Serial(self.serialport, baudrate=115200, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                #self.serial = serial.Serial(self.serialport, baudrate=76800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                self.initialized = True
+            except serial.serialutil.SerialException, e:
+                rospy.logerr('ledpanels serial port could not be opened:' % e)
         else:
             rospy.logerr('ledpanels serial port was not specified as a ROS parameter, nor was it found automatically.')
-            rospy.signal_shutdown('Exiting ledpanels due to cannot find controller serial port.')
             
 
     # Figure out which serial port the panels controller is attached to.
@@ -446,6 +448,8 @@ class LEDPanels():
 
 if __name__ == '__main__':
     panels = LEDPanels()
-    panels.Main()
-    
+    if panels.initialized:
+        panels.Main()
+    else:
+        rospy.logerr('LEDPanels could not start.')
 
