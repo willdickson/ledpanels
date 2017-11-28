@@ -3,6 +3,7 @@ from __future__ import division
 import roslib; roslib.load_manifest('ledpanels')
 import rospy
 import serial
+import threading
 import numpy as N
 
 if __name__ == '__main__':
@@ -27,6 +28,8 @@ import subprocess
 class LEDPanels():
     def __init__(self):
         self.initialized = False
+        self.lock = threading.Lock()
+        self.timeout = 1.0
         
         rospy.init_node('ledpanels')
         rospy.sleep(1)
@@ -238,11 +241,12 @@ class LEDPanels():
         rospy.logwarn ('ledpanels using %s' % self.serialport)
         if (self.serialport is not None):
             try:
-                #self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-                #self.serial = serial.Serial(self.serialport, baudrate=460800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-                #self.serial = serial.Serial(self.serialport, baudrate=230400, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-                self.serial = serial.Serial(self.serialport, baudrate=115200, rtscts=False, dsrdtr=False, timeout=1) # 8N1
-                #self.serial = serial.Serial(self.serialport, baudrate=76800, rtscts=False, dsrdtr=False, timeout=1) # 8N1
+                with self.lock:
+                    self.serial = serial.Serial(self.serialport, baudrate=921600, rtscts=False, dsrdtr=False, timeout=self.timeout) # 8N1
+                    #self.serial = serial.Serial(self.serialport, baudrate=460800, rtscts=False, dsrdtr=False, timeout=self.timeout) # 8N1
+                    #self.serial = serial.Serial(self.serialport, baudrate=230400, rtscts=False, dsrdtr=False, timeout=self.timeout) # 8N1
+                    #self.serial = serial.Serial(self.serialport, baudrate=self.timeout15200, rtscts=False, dsrdtr=False, timeout=self.timeout) # 8N1
+                    #self.serial = serial.Serial(self.serialport, baudrate=76800, rtscts=False, dsrdtr=False, timeout=self.timeout) # 8N1
                 self.initialized = True
             except serial.serialutil.SerialException, e:
                 rospy.logerr('ledpanels serial port could not be opened:' % e)
@@ -273,14 +277,20 @@ class LEDPanels():
               
         
     def MakeSurePortIsOpen(self):
-        while not self.serial.isOpen():
-            try:
-                rospy.logwarn ('ledpanels: Trying to open serial port %s ...' % self.serialport)
-                self.serial.open()
-            except serial.SerialException:
-                rospy.sleep(1)
-            else:
-                rospy.logwarn ('ledpanels: Opened serial port %s' % self.serialport)
+
+        isOpen = False
+        while not isOpen:
+            with self.lock:
+                isOpen = self.serial.isOpen()
+            if not isOpen:
+                try:
+                    rospy.logwarn ('ledpanels: Trying to open serial port %s ...' % self.serialport)
+                    with self.lock:
+                        self.serial.open()
+                except serial.SerialException:
+                    rospy.sleep(1)
+                else:
+                    rospy.logwarn ('ledpanels: Opened serial port %s' % self.serialport)
     
         
     # Read a string from panels controller.
@@ -288,10 +298,13 @@ class LEDPanels():
         data = None
         if self.initialized:
             self.MakeSurePortIsOpen()
-            data = self.serial.readline()
-            
+            with self.lock:
+                try:
+                    self.serial.timeout = 0
+                    data = self.serial.readline()
+                finally:
+                    self.serial.timeout = self.timeout
         return SrvReadlineResponse(data=data)
-            
             
 
     # Sends the get_version command to the LED controller, and returns the response.
@@ -299,12 +312,10 @@ class LEDPanels():
         version = None
         if self.initialized:
             serialbytes_list = self.SerialBytelistFromCommand('get_version', [])
-
             self.MakeSurePortIsOpen()
-                        
-            self.serial.write(''.join(serialbytes_list))
-            version = self.serial.readline()
-            
+            with self.lock:
+                self.serial.write(''.join(serialbytes_list))
+                version = self.serial.readline()
         return SrvGetVersionResponse(version=version)
             
             
@@ -315,9 +326,10 @@ class LEDPanels():
         if self.initialized:
             serialbytes_list = self.SerialBytelistFromCommand('get_adc_value', [req.channel])
             self.MakeSurePortIsOpen()
-            self.serial.write(''.join(serialbytes_list))
-            value = self.serial.readline()
-            
+            with self.lock:
+                self.serial.write(''.join(serialbytes_list))
+                value = self.serial.readline()
+            rospy.logwarn('value = {0}'.format(value))
         return SrvGetADCValueResponse(value=value)
             
             
@@ -407,8 +419,9 @@ class LEDPanels():
     def OnShutdown_callback(self):
         if self.initialized:
             self.initialized = False
-            if self.serial.isOpen():
-                self.serial.close()
+            with self.lock:
+                if self.serial.isOpen():
+                    self.serial.close()
 
 
     def PanelsCommand_callback(self, panelcommand):
@@ -419,14 +432,19 @@ class LEDPanels():
             self.MakeSurePortIsOpen()
                         
             try:
-                self.serial.write(''.join(serialbytes_list))
+                with self.lock:
+                    self.serial.write(''.join(serialbytes_list))
             except serial.SerialException, e:
                 rospy.logwarn('ledpanels: Serial exception, trying to reopen: %s' % e)
-                if self.serial.isOpen():
-                    self.serial.close()
+                with self.lock:
+                    if self.serial.isOpen():
+                        self.serial.close()
+
                 self.MakeSurePortIsOpen()
+
                 try:
-                    self.serial.write(''.join(serialbytes_list))
+                    with self.lock:
+                        self.serial.write(''.join(serialbytes_list))
                 except serial.SerialException, e:
                     rospy.logwarn ('ledpanels: Write FAILED to serial port %s: %s' % (self.serialport, e))
                 else:
@@ -436,8 +454,6 @@ class LEDPanels():
         panelcommand = MsgPanelsCommand(command='all_off')
         self.PanelsCommand_callback(panelcommand)
         rospy.spin()
-#         while (1):
-#             rospy.logwarn(self.serial.readline())
 
 #        # Shutdown all the services we offered.
 #        for key in self.services:
